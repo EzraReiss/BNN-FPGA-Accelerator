@@ -17,8 +17,10 @@
 //              I - width of input fmaps
 // @param[out] : output - output fmaps
 template <int M, int I>
-void pad(bit input[M][I][I], bit output[M][I + F_PAD][I + F_PAD]) {
-
+void pad(
+  bit input[M][I][I], 
+  bit output[M][I + F_PAD][I + F_PAD]
+) {
   for (int m = 0; m < M; m++) {
     for (int x = 0; x < I; x++) {
       for (int y = 0; y < I; y++) {
@@ -34,7 +36,9 @@ void pad(bit input[M][I][I], bit output[M][I + F_PAD][I + F_PAD]) {
 // @param[in] : input - input fmaps to be initialized
 // @param[out] : output - output fmaps
 template <int M, int I, int C>
-void initialize_padded_memory(bit input[M][I][I]) {
+void initialize_padded_memory(
+  bit input[M][I][I]
+) {
   for (int m = 0; m < M; m++) {
     for (int x = 0; x < I; x++) {
       for (int y = 0; y < I; y++) {
@@ -55,10 +59,12 @@ void initialize_padded_memory(bit input[M][I][I]) {
 //              weight - layer weights
 // @param[out] : output - output fmaps
 template <int M, int N, int I>
-void conv(bit input[M][I][I], bit output[N][I - F + 1][I - F + 1],
-          const bit8_t threshold[N], const bit weight[M][N][F][F]) {
-  #pragma HLS array_reshape variable=weight complete dim=1
-  #pragma HLS array_reshape variable=input complete dim=1
+void conv(
+  bit input[M][I][I], 
+  bit output[N][I - F + 1][I - F + 1],
+  const bit8_t threshold[N], 
+  const bit weight[M][N][F][F]
+) {
   int num_accum = F * F * M;
   for (int n = 0; n < N; n++) {
     for (int x = 0; x < I - F + 1; x++) {
@@ -66,13 +72,13 @@ void conv(bit input[M][I][I], bit output[N][I - F + 1][I - F + 1],
         bit16_t accum = 0;
 
         for (int c = 0; c < F; c++) {
-          for (int r = 0; r < F; r++) { //reorder this pragma so the access pattern is column based?
+          for (int r = 0; r < F; r++) {
             for (int m = 0; m < M; m++) {
-              #pragma HLS unroll
               accum += input[m][y + r][x + c] == weight[m][n][r][c];
             }
           }
         }
+
         accum = (accum << 1) - num_accum;
         output[n][y][x] = accum > threshold[n] ? 1 : 0;
       }
@@ -88,8 +94,10 @@ void conv(bit input[M][I][I], bit output[N][I - F + 1][I - F + 1],
 //              I - width of input fmaps
 // @param[out] : output - output fmaps
 template <int M, int I>
-void max_pool(bit input[M][I][I], bit output[M][I / 2][I / 2]) {
-
+void max_pool(
+  bit input[M][I][I], 
+  bit output[M][I / 2][I / 2]
+) {
   for (int m = 0; m < M; m++) {
     for (int x = 0; x < I / 2; x++) {
       for (int y = 0; y < I / 2; y++) {
@@ -112,7 +120,10 @@ void max_pool(bit input[M][I][I], bit output[M][I / 2][I / 2]) {
 // @param[in] : input - output fmaps from the last conv layer
 // @param[out] : output - input famps of the first dense layer
 
-void flatten(bit input[O_CHANNEL2][O_WIDTH][O_WIDTH], bit output[I_UNITS1]) {
+void flatten(
+  bit input[O_CHANNEL2][O_WIDTH][O_WIDTH], 
+  bit output[I_UNITS1]
+) {
   for (int c = 0; c < O_CHANNEL2; c++) {
     for (int y = 0; y < O_WIDTH; y++) {
       for (int x = 0; x < O_WIDTH; x++) {
@@ -130,7 +141,10 @@ void flatten(bit input[O_CHANNEL2][O_WIDTH][O_WIDTH], bit output[I_UNITS1]) {
 //              M - number of input and output channels
 // @param[out] : output - output fmaps
 
-template <int M> void sign(bit16_t input[M], bit output[M]) {
+template <int M> void sign(
+  bit16_t input[M], 
+  bit output[M]
+) {
   for (int m = 0; m < M; m++) {
     output[m] = (input[m] > 0) ? 1 : 0;
   }
@@ -142,7 +156,9 @@ template <int M> void sign(bit16_t input[M], bit output[M]) {
 // @param[in] : input - input channels
 // @param[out] : output - argmax of the inputs
 
-bit4_t argmax(bit16_t input[NUM_DIGITS]) {
+bit4_t argmax(
+  bit16_t input[NUM_DIGITS]
+) {
   bit16_t max = input[0];
   bit4_t max_id = 0;
   for (int i = 1; i < NUM_DIGITS; i++) {
@@ -164,7 +180,11 @@ bit4_t argmax(bit16_t input[NUM_DIGITS]) {
 // @param[out] : output - output fmaps
 
 template <int M, int N>
-void dense(bit input[M], bit16_t output[N], const bit weight[M][N]) {
+void dense(
+  bit input[M], 
+  bit16_t output[N], 
+  const bit weight[M][N]
+) {
   for (int n = 0; n < N; n++) {
     bit16_t accum = 0;
     for (int m = 0; m < M; m++) {
