@@ -66,17 +66,27 @@ void conv(
   #pragma HLS array_reshape variable=weight complete dim=1
   #pragma HLS array_reshape variable=input complete dim=1
 
+  // Cyclic partitions on weights and inputs for rows and columns
+  #pragma HLS partition variable=weight factor=3 dim=3
+  #pragma HLS partition variable=weight factor=3 dim=4
+  #pragma HLS partition variable=input factor=3 dim=2
+  #pragma HLS partition variable=input factor=3 dim=3
+
+  #pragma HLS partition variable=output complete dim=1
+  #pragma HLS partition variable=weight complete dim=2
+  
+
   int num_accum = F * F * M;
-  for (int n = 0; n < N; n++) {
-    for (int x = 0; x < I - F + 1; x++) {
-      for (int y = 0; y < I - F + 1; y++) {
+  for (int x = 0; x < I - F + 1; x++) {
+    for (int y = 0; y < I - F + 1; y++) {
+      for (int n = 0; n < N; n++) {
+        #pragma HLS pipeline
+
         bit16_t accum = 0;
 
         for (int c = 0; c < F; c++) {
           for (int r = 0; r < F; r++) {
-            //reorder this pragma so the access pattern is column based?
             for (int m = 0; m < M; m++) {
-              #pragma HLS unroll
               accum += input[m][y + r][x + c] == weight[m][n][r][c];
             }
           }
@@ -183,6 +193,7 @@ void dense(bit input[M], bit16_t output[N], const bit weight[M][N]) {
   for (int n = 0; n < N; n++) {
     bit16_t accum = 0;
     for (int m = 0; m < M; m++) {
+      #pragma HLS unroll
       accum += input[m] == weight[m][n]; // XNOR
     }
     output[n] = (accum << 1) - M;
