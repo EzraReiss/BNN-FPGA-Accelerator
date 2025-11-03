@@ -9,6 +9,9 @@
 #include "model.h"
 #include "typedefs.h"
 
+typedef ap_uint<32> HLS_SIZE_T;
+#include "hls/hls_video_mem.h"
+
 //----------------------------------------------------------
 // Padding
 //----------------------------------------------------------
@@ -71,78 +74,78 @@ void conv(
 ) {
   #pragma HLS INLINE off
 
-  // Adding BRAMs for the M dimension (input features)
-  #pragma HLS array_reshape variable=weight complete dim = 1
-  #pragma HLS array_reshape variable=input complete dim = 1
+  bit input_slice[M][F][F];
 
-  // Adding BRAMs for rows and columns using cyclic partitioning
+    // Adding BRAMs for rows and columns using cyclic partitioning
+  #pragma HLS array_partition variable = weight complete dim = 4
+  #pragma HLS array_partition variable = weight complete dim = 3
   #pragma HLS array_partition variable = weight complete dim = 2
+  #pragma HLS array_reshape variable = weight complete dim = 1
 
-  #pragma HLS array_partition variable = threshold complete dim = 1
-  #pragma HLS array_partition variable=output complete dim = 1
+  #pragma HLS array_reshape variable = input complete dim = 1
 
-  constexpr int num_accum = F * F * M;
-  constexpr int lb_size = I * (F - 1) + F;
+  // Adding BRAMs for the N dimension (output features)
+  #pragma HLS array_partition variable = output complete dim = 1
 
-  bit linebuffer[M][lb_size];
-  #pragma HLS array_reshape variable=linebuffer complete dim = 1
-  #pragma HLS array_partition variable=linebuffer complete dim = 2
+  int num_accum = F * F * M;
 
+  hls::Window<F, F, ap_uint<M>> window;
+  hls::LineBuffer<F - 1, I, ap_uint<M>> linebuf;
 
-  INIT_LINEBUFFER_X: for (int x = 0; x < F - 1; x++) {
-    INIT_LINEBUFFER_Y: for (int y = 0; y < I; y++) {
-      INIT_LINEBUFFER_FEATURES: for (int m = 0; m < M; m++) {
-        #pragma HLS unroll
-        linebuffer[m][x * I + y + F - 1] = input[m][y][x];
+  // fill linebuf with first F rows form input
+  initialize_linebuf:
+  for (int x = 0; x < F; x++) {
+    for (int y = 0; y < I; y++) {
+      #pragma HLS pipeline
+      ap_uint<M> pixel_val;
+      for (int m = 0; m < M; m++) {
+        pixel_val[m] = input[m][y][x];
       }
+      linebuf.shift_pixels_up(y);
+      linebuf.insert_bottom_row(pixel_val, y);
     }
   }
-  
-  OUTPUT_X: for (int x = 0; x < I - F + 1; x++) {
 
-    SHIFT_LINE_BUF_X: for (int p = 0; p < lb_size - F + 1; p++) {
-      #pragma HLS unroll
-      for (int m = 0; m < M; m++) {
-        linebuffer[m][p] = linebuffer[m][p + F - 1];
-      }
+  // fill window with the first FxF pixels from linebuf
+  initialize_window:
+  for (int x = 0; x < F; x++) { 
+    #pragma HLS pipeline
+    for (int y = 0; y < F; y++) {
+      window.insert_pixel(
+        linebuf.getval(x, y), 
+        x, 
+        y
+      );
     }
+  }
 
-    INIT_LINE_BUF_X: for (int p = 0; p < F - 1; p++) {
-      #pragma HLS unroll
-      for (int m = 0; m < M; m++) {
-        linebuffer[m][I * (F - 1) + 1 + p] = input[m][p][x + F - 1];
-      }
-    }
-
-    OUTPUT_Y: for (int y = 0; y < I - F + 1; y++) {      
-      SHIFT_LINE_BUF_Y: for (int p = 0; p < lb_size - 1; p++) {
-        for (int m = 0; m < M; m++) {
-          #pragma HLS unroll
-          linebuffer[m][p] = linebuffer[m][p + 1];
-        }
-      }
-
-      INIT_LINE_BUF_Y: for (int m = 0; m < M; m++) {
-        #pragma HLS unroll
-        linebuffer[m][lb_size - 1] = input[m][y + F - 1][x + F - 1];
-      }
-      
-      OUTPUT_FEATURES: for (int n = 0; n < N; n++) {
+  for (int x = 0; x < I - F + 1; x++) {
+    for (int y = 0; y < I - F + 1; y++) {
+      for (int n = 0; n < N; n++) {
         #pragma HLS pipeline
-      
+
         bit16_t accum = 0;
 
-        WEIGHT_COLS: for (int c = 0; c < F; c++) {
-          WEIGHT_ROWS: for (int r = 0; r < F; r++) {
-            INPUT_FEATURES: for (int m = 0; m < M; m++) {
-              accum += linebuffer[m][r * I + c] == weight[m][n][c][r];
+        for (int c = 0; c < F; c++) {
+          for (int r = 0; r < F; r++) {
+            for (int m = 0; m < M; m++) {
+              accum += window.getval(x, y, m) == weight[m][n][c][r];
             }
           }
         }
 
         accum = (accum << 1) - num_accum;
         output[n][y][x] = accum > threshold[n] ? 1 : 0;
-      }   
+      }
+      
+      window.shift_pixels_left();
+      for (int xx = 0; xx < F; xx++) {
+        window.insert_pixel(
+          linebuf.getval(xx, y + F), 
+          xx, 
+          F - 1
+        );
+      }
     }
   }
 }
